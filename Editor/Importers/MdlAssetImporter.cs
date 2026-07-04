@@ -24,10 +24,11 @@ namespace Source2Unity.Editor.Importers
                 ctx.AddObjectToAsset("root", root);
                 ctx.SetMainObject(root);
 
+                var boneAbsoluteMatrices = ComputeBoneMatricesGoldSrc(result);
                 var bones = BuildBoneHierarchy(root, result);
                 var textures = ImportTextures(ctx, result.ParsedTextures);
                 var materials = CreateMaterials(ctx, textures, result.ParsedTextures);
-                ImportSkinnedMeshes(ctx, root, result, bones, materials);
+                ImportMeshes(ctx, root, result, bones, materials, boneAbsoluteMatrices);
                 ImportAnimations(ctx, root, result, bones);
             }
             catch (NotSupportedException ex)
@@ -40,7 +41,89 @@ namespace Source2Unity.Editor.Importers
             }
         }
 
-        #region Bone Hierarchy
+        #region Bone Matrices (GoldSrc Space)
+
+        private struct GoldSrcMatrix
+        {
+            public float M00, M01, M02, M03;
+            public float M10, M11, M12, M13;
+            public float M20, M21, M22, M23;
+
+            public static GoldSrcMatrix FromAngleAndPos(float rx, float ry, float rz, float px, float py, float pz)
+            {
+                float sp = Mathf.Sin(rx), cp = Mathf.Cos(rx);
+                float sy = Mathf.Sin(ry), cy = Mathf.Cos(ry);
+                float sr = Mathf.Sin(rz), cr = Mathf.Cos(rz);
+
+                return new GoldSrcMatrix
+                {
+                    M00 = cp * cr, M01 = sy * sp * cr + cy * (-sr), M02 = cy * sp * cr + (-sy) * (-sr), M03 = px,
+                    M10 = cp * sr, M11 = sy * sp * sr + cy * cr,    M12 = cy * sp * sr + (-sy) * cr,    M13 = py,
+                    M20 = -sp,     M21 = sy * cp,                   M22 = cy * cp,                      M23 = pz
+                };
+            }
+
+            public static GoldSrcMatrix Concat(in GoldSrcMatrix a, in GoldSrcMatrix b)
+            {
+                GoldSrcMatrix o;
+                o.M00 = a.M00 * b.M00 + a.M01 * b.M10 + a.M02 * b.M20;
+                o.M01 = a.M00 * b.M01 + a.M01 * b.M11 + a.M02 * b.M21;
+                o.M02 = a.M00 * b.M02 + a.M01 * b.M12 + a.M02 * b.M22;
+                o.M03 = a.M00 * b.M03 + a.M01 * b.M13 + a.M02 * b.M23 + a.M03;
+
+                o.M10 = a.M10 * b.M00 + a.M11 * b.M10 + a.M12 * b.M20;
+                o.M11 = a.M10 * b.M01 + a.M11 * b.M11 + a.M12 * b.M21;
+                o.M12 = a.M10 * b.M02 + a.M11 * b.M12 + a.M12 * b.M22;
+                o.M13 = a.M10 * b.M03 + a.M11 * b.M13 + a.M12 * b.M23 + a.M13;
+
+                o.M20 = a.M20 * b.M00 + a.M21 * b.M10 + a.M22 * b.M20;
+                o.M21 = a.M20 * b.M01 + a.M21 * b.M11 + a.M22 * b.M21;
+                o.M22 = a.M20 * b.M02 + a.M21 * b.M12 + a.M22 * b.M22;
+                o.M23 = a.M20 * b.M03 + a.M21 * b.M13 + a.M22 * b.M23 + a.M23;
+                return o;
+            }
+
+            public Vector3 TransformPoint(float x, float y, float z)
+            {
+                return new Vector3(
+                    M00 * x + M01 * y + M02 * z + M03,
+                    M10 * x + M11 * y + M12 * z + M13,
+                    M20 * x + M21 * y + M22 * z + M23);
+            }
+
+            public Vector3 TransformDirection(float x, float y, float z)
+            {
+                return new Vector3(
+                    M00 * x + M01 * y + M02 * z,
+                    M10 * x + M11 * y + M12 * z,
+                    M20 * x + M21 * y + M22 * z);
+            }
+        }
+
+        private static unsafe GoldSrcMatrix[] ComputeBoneMatricesGoldSrc(MdlParseResult result)
+        {
+            if (result.Bones == null || result.Bones.Count == 0)
+                return Array.Empty<GoldSrcMatrix>();
+
+            var matrices = new GoldSrcMatrix[result.Bones.Count];
+            for (int i = 0; i < result.Bones.Count; i++)
+            {
+                var bone = result.Bones[i];
+                var local = GoldSrcMatrix.FromAngleAndPos(
+                    bone.Value[3], bone.Value[4], bone.Value[5],
+                    bone.Value[0], bone.Value[1], bone.Value[2]);
+
+                if (bone.Parent >= 0 && bone.Parent < i)
+                    matrices[i] = GoldSrcMatrix.Concat(matrices[bone.Parent], local);
+                else
+                    matrices[i] = local;
+            }
+            return matrices;
+        }
+
+        #endregion
+
+        #region Bone Hierarchy (Unity Transforms)
 
         private static Transform[] BuildBoneHierarchy(GameObject root, MdlParseResult result)
         {
@@ -176,8 +259,7 @@ namespace Source2Unity.Editor.Importers
                 if (i < textures.Count)
                 {
                     mat.mainTexture = textures[i];
-                    if (isUrp)
-                        mat.SetTexture("_BaseMap", textures[i]);
+                    if (isUrp) mat.SetTexture("_BaseMap", textures[i]);
                 }
 
                 if (isUrp)
@@ -196,17 +278,14 @@ namespace Source2Unity.Editor.Importers
         {
             if ((flags & MdlTextureFlags.Additive) != 0)
             {
-                mat.SetFloat("_Surface", 1f); // Transparent
-                mat.SetFloat("_Blend", 1f); // Additive
+                mat.SetFloat("_Surface", 1f);
+                mat.SetFloat("_Blend", 1f);
                 mat.SetFloat("_ZWrite", 0f);
-                mat.SetFloat("_AlphaClip", 0f);
                 mat.renderQueue = 3000;
-                mat.SetOverrideTag("RenderType", "Transparent");
                 mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
             }
             else if ((flags & MdlTextureFlags.Masked) != 0 || (flags & MdlTextureFlags.Alpha) != 0)
             {
-                mat.SetFloat("_Surface", 0f); // Opaque
                 mat.SetFloat("_AlphaClip", 1f);
                 mat.SetFloat("_Cutoff", 0.5f);
                 mat.renderQueue = 2450;
@@ -269,14 +348,15 @@ namespace Source2Unity.Editor.Importers
 
         #endregion
 
-        #region Skinned Meshes
+        #region Mesh Building
 
-        private static void ImportSkinnedMeshes(
+        private static void ImportMeshes(
             AssetImportContext ctx,
             GameObject root,
             MdlParseResult result,
             Transform[] bones,
-            List<Material> materials)
+            List<Material> materials,
+            GoldSrcMatrix[] boneMatricesGS)
         {
             if (result.ParsedBodyParts == null) return;
 
@@ -287,7 +367,43 @@ namespace Source2Unity.Editor.Importers
                 {
                     if (model.Meshes == null || model.Meshes.Count == 0) continue;
 
-                    var combinedMesh = BuildSkinnedMesh(model, result, bones, root.transform);
+                    // Pre-transform all vertices and normals from bone-local to bind-pose
+                    // in GoldSrc space, then convert to Unity coordinates.
+                    // This matches exactly what assimp's HL1MDLLoader does.
+                    var bindPoseVerts = new Vector3[model.Vertices.Length];
+                    var bindPoseNorms = new Vector3[model.Normals.Length];
+
+                    for (int k = 0; k < model.Vertices.Length; k++)
+                    {
+                        int boneIdx = (model.VertexBoneIndices != null && k < model.VertexBoneIndices.Length)
+                            ? model.VertexBoneIndices[k] : 0;
+
+                        if (boneIdx >= 0 && boneIdx < boneMatricesGS.Length)
+                        {
+                            var v = model.Vertices[k];
+                            var gsWorld = boneMatricesGS[boneIdx].TransformPoint(v.X, v.Y, v.Z);
+                            bindPoseVerts[k] = GsToUnityPos(gsWorld);
+                        }
+                    }
+
+                    for (int k = 0; k < model.Normals.Length; k++)
+                    {
+                        int boneIdx = (model.NormalBoneIndices != null && k < model.NormalBoneIndices.Length)
+                            ? model.NormalBoneIndices[k] : 0;
+
+                        if (boneIdx >= 0 && boneIdx < boneMatricesGS.Length)
+                        {
+                            var n = model.Normals[k];
+                            var gsDir = boneMatricesGS[boneIdx].TransformDirection(n.X, n.Y, n.Z);
+                            bindPoseNorms[k] = GsToUnityDir(gsDir).normalized;
+                        }
+                        else
+                        {
+                            bindPoseNorms[k] = Vector3.up;
+                        }
+                    }
+
+                    var combinedMesh = BuildMesh(model, result, bones, bindPoseVerts, bindPoseNorms);
                     if (combinedMesh == null) continue;
 
                     string meshName = !string.IsNullOrEmpty(model.Name)
@@ -329,30 +445,18 @@ namespace Source2Unity.Editor.Importers
             }
         }
 
-        private static Mesh BuildSkinnedMesh(
+        private static Mesh BuildMesh(
             MdlParsedModel model,
             MdlParseResult result,
             Transform[] bones,
-            Transform rootTransform)
+            Vector3[] bindPoseVerts,
+            Vector3[] bindPoseNorms)
         {
             var vertices = new List<Vector3>();
             var normals = new List<Vector3>();
             var uvs = new List<Vector2>();
             var boneWeights = new List<BoneWeight>();
             var subMeshTriangles = new List<List<int>>();
-
-            // GoldSrc stores vertices in bone-local space.
-            // Unity SkinnedMeshRenderer expects vertices in model space (bind pose).
-            // Pre-compute bone world matrices to transform vertices from bone-local → model space.
-            Matrix4x4[] boneWorldMatrices = null;
-            Matrix4x4 rootInverse = Matrix4x4.identity;
-            if (bones.Length > 0)
-            {
-                rootInverse = rootTransform.worldToLocalMatrix;
-                boneWorldMatrices = new Matrix4x4[bones.Length];
-                for (int i = 0; i < bones.Length; i++)
-                    boneWorldMatrices[i] = rootInverse * bones[i].localToWorldMatrix;
-            }
 
             int vertexOffset = 0;
 
@@ -376,14 +480,15 @@ namespace Source2Unity.Editor.Importers
 
                 foreach (var tri in parsedMesh.Triangles)
                 {
-                    AddSkinnedVertex(model, tri.V0, texWidth, texHeight, bones, boneWorldMatrices, vertices, normals, uvs, boneWeights);
-                    AddSkinnedVertex(model, tri.V1, texWidth, texHeight, bones, boneWorldMatrices, vertices, normals, uvs, boneWeights);
-                    AddSkinnedVertex(model, tri.V2, texWidth, texHeight, bones, boneWorldMatrices, vertices, normals, uvs, boneWeights);
+                    EmitVertex(model, tri.V0, texWidth, texHeight, bindPoseVerts, bindPoseNorms, vertices, normals, uvs, boneWeights);
+                    EmitVertex(model, tri.V1, texWidth, texHeight, bindPoseVerts, bindPoseNorms, vertices, normals, uvs, boneWeights);
+                    EmitVertex(model, tri.V2, texWidth, texHeight, bindPoseVerts, bindPoseNorms, vertices, normals, uvs, boneWeights);
 
                     int baseIdx = vertexOffset;
-                    indices.Add(baseIdx);
+                    // Assimp outputs (v2, v1, v0) — reversed winding for LH coordinate systems
                     indices.Add(baseIdx + 2);
                     indices.Add(baseIdx + 1);
+                    indices.Add(baseIdx);
                     vertexOffset += 3;
                 }
 
@@ -409,7 +514,7 @@ namespace Source2Unity.Editor.Importers
             {
                 var bindPoses = new Matrix4x4[bones.Length];
                 for (int i = 0; i < bones.Length; i++)
-                    bindPoses[i] = boneWorldMatrices[i].inverse;
+                    bindPoses[i] = bones[i].worldToLocalMatrix * bones[0].parent.localToWorldMatrix;
                 mesh.bindposes = bindPoses;
             }
 
@@ -417,18 +522,31 @@ namespace Source2Unity.Editor.Importers
             return mesh;
         }
 
-        private static void AddSkinnedVertex(
+        private static void EmitVertex(
             MdlParsedModel model,
             MdlTriVertex triVert,
-            int texWidth,
-            int texHeight,
-            Transform[] bones,
-            Matrix4x4[] boneWorldMatrices,
+            int texWidth, int texHeight,
+            Vector3[] bindPoseVerts,
+            Vector3[] bindPoseNorms,
             List<Vector3> vertices,
             List<Vector3> normals,
             List<Vector2> uvs,
             List<BoneWeight> boneWeights)
         {
+            if (triVert.VertexIndex >= 0 && triVert.VertexIndex < bindPoseVerts.Length)
+                vertices.Add(bindPoseVerts[triVert.VertexIndex]);
+            else
+                vertices.Add(Vector3.zero);
+
+            if (triVert.NormalIndex >= 0 && triVert.NormalIndex < bindPoseNorms.Length)
+                normals.Add(bindPoseNorms[triVert.NormalIndex]);
+            else
+                normals.Add(Vector3.up);
+
+            float u = triVert.S / (float)texWidth;
+            float v = 1f - (triVert.T / (float)texHeight);
+            uvs.Add(new Vector2(u, v));
+
             int boneIdx = 0;
             if (model.VertexBoneIndices != null &&
                 triVert.VertexIndex >= 0 &&
@@ -437,41 +555,7 @@ namespace Source2Unity.Editor.Importers
                 boneIdx = model.VertexBoneIndices[triVert.VertexIndex];
             }
 
-            if (triVert.VertexIndex >= 0 && triVert.VertexIndex < model.Vertices.Length)
-            {
-                var boneLocalPos = GoldSrcToUnity(model.Vertices[triVert.VertexIndex]);
-                if (boneWorldMatrices != null && boneIdx >= 0 && boneIdx < boneWorldMatrices.Length)
-                    vertices.Add(boneWorldMatrices[boneIdx].MultiplyPoint3x4(boneLocalPos));
-                else
-                    vertices.Add(boneLocalPos);
-            }
-            else
-            {
-                vertices.Add(Vector3.zero);
-            }
-
-            if (triVert.NormalIndex >= 0 && triVert.NormalIndex < model.Normals.Length)
-            {
-                var boneLocalNormal = GoldSrcToUnityDir(model.Normals[triVert.NormalIndex]);
-                if (boneWorldMatrices != null && boneIdx >= 0 && boneIdx < boneWorldMatrices.Length)
-                    normals.Add(boneWorldMatrices[boneIdx].MultiplyVector(boneLocalNormal).normalized);
-                else
-                    normals.Add(boneLocalNormal);
-            }
-            else
-            {
-                normals.Add(Vector3.up);
-            }
-
-            float u = triVert.S / (float)texWidth;
-            float v = 1f - (triVert.T / (float)texHeight);
-            uvs.Add(new Vector2(u, v));
-
-            boneWeights.Add(new BoneWeight
-            {
-                boneIndex0 = boneIdx,
-                weight0 = 1f
-            });
+            boneWeights.Add(new BoneWeight { boneIndex0 = boneIdx, weight0 = 1f });
         }
 
         #endregion
@@ -562,8 +646,7 @@ namespace Source2Unity.Editor.Importers
 
                 ctx.AddObjectToAsset($"clip_{seqIdx}", clip);
 
-                if (seqIdx == 0)
-                    anim.clip = clip;
+                if (seqIdx == 0) anim.clip = clip;
                 anim.AddClip(clip, clip.name);
             }
         }
@@ -595,14 +678,14 @@ namespace Source2Unity.Editor.Importers
 
         #region Coordinate Conversion
 
-        private static Vector3 GoldSrcToUnity(Vector3F v)
+        private static Vector3 GsToUnityPos(Vector3 gsWorld)
         {
-            return new Vector3(-v.Y * GoldSrcScale, v.Z * GoldSrcScale, v.X * GoldSrcScale);
+            return new Vector3(-gsWorld.y * GoldSrcScale, gsWorld.z * GoldSrcScale, gsWorld.x * GoldSrcScale);
         }
 
-        private static Vector3 GoldSrcToUnityDir(Vector3F v)
+        private static Vector3 GsToUnityDir(Vector3 gsDir)
         {
-            return new Vector3(-v.Y, v.Z, v.X);
+            return new Vector3(-gsDir.y, gsDir.z, gsDir.x);
         }
 
         private static Vector3 GoldSrcPositionToUnity(float gx, float gy, float gz)
