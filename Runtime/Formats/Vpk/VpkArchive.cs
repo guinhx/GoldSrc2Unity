@@ -51,13 +51,13 @@ namespace Source2Unity.Formats.Vpk
                 long dataStart = _result.HeaderSize + _result.TreeSize + entry.EntryOffset;
                 using var dirStream = File.OpenRead(_result.DirectoryFilePath);
                 dirStream.Seek(dataStart, SeekOrigin.Begin);
-                dirStream.Read(archiveData, 0, archiveData.Length);
+                ReadFully(dirStream, archiveData);
             }
             else
             {
                 var stream = GetArchiveStream(entry.ArchiveIndex);
                 stream.Seek(entry.EntryOffset, SeekOrigin.Begin);
-                stream.Read(archiveData, 0, archiveData.Length);
+                ReadFully(stream, archiveData);
             }
 
             if (preload.Length == 0)
@@ -69,12 +69,25 @@ namespace Source2Unity.Formats.Vpk
             return combined;
         }
 
+        private static void ReadFully(Stream stream, byte[] buffer)
+        {
+            int offset = 0;
+            while (offset < buffer.Length)
+            {
+                int read = stream.Read(buffer, offset, buffer.Length - offset);
+                if (read == 0)
+                    throw new EndOfStreamException($"Unexpected end of stream: read {offset} of {buffer.Length} bytes.");
+                offset += read;
+            }
+        }
+
         public VpkFileEntry FindEntry(string path)
         {
             if (_result == null)
                 throw new InvalidOperationException("No VPK has been read. Call Read() first.");
 
             string extension = Path.GetExtension(path).TrimStart('.');
+            if (string.IsNullOrEmpty(extension)) extension = " ";
             string directory = Path.GetDirectoryName(path)?.Replace('\\', '/') ?? " ";
             string fileName = Path.GetFileNameWithoutExtension(path);
 

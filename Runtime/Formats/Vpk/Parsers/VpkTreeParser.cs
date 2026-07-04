@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Source2Unity.Formats.Common;
 using Source2Unity.Formats.Vpk.Structures;
 
@@ -30,6 +31,10 @@ namespace Source2Unity.Formats.Vpk.Parsers
                             break;
 
                         var dirEntry = reader.ReadStruct<VpkDirectoryEntry>();
+
+                        if (dirEntry.Terminator != VpkDirectoryEntry.ExpectedTerminator)
+                            throw new InvalidDataException(
+                                $"Invalid VPK entry terminator: expected 0x{VpkDirectoryEntry.ExpectedTerminator:X4}, got 0x{dirEntry.Terminator:X4}.");
 
                         byte[] preloadData = Array.Empty<byte>();
                         if (dirEntry.PreloadSize > 0)

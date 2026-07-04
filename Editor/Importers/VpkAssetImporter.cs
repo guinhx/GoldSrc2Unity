@@ -11,13 +11,24 @@ namespace Source2Unity.Editor.Importers
     {
         public override void OnImportAsset(AssetImportContext ctx)
         {
+            string fileName = System.IO.Path.GetFileNameWithoutExtension(ctx.assetPath);
+            if (!fileName.EndsWith("_dir", StringComparison.OrdinalIgnoreCase))
+            {
+                var placeholder = ScriptableObject.CreateInstance<VpkArchiveAsset>();
+                placeholder.name = fileName;
+                placeholder.Version = "Chunk file (not a directory)";
+                ctx.AddObjectToAsset("vpk", placeholder);
+                ctx.SetMainObject(placeholder);
+                return;
+            }
+
             try
             {
                 using var archive = new VpkArchive();
                 var result = archive.Read(ctx.assetPath);
 
                 var asset = ScriptableObject.CreateInstance<VpkArchiveAsset>();
-                asset.name = System.IO.Path.GetFileNameWithoutExtension(ctx.assetPath);
+                asset.name = fileName;
                 asset.Version = result.Version.ToString();
                 asset.TreeSize = result.TreeSize;
 
@@ -32,7 +43,7 @@ namespace Source2Unity.Editor.Importers
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Source2Unity] Failed to import VPK: {ex.Message}\n{ex.StackTrace}");
+                ctx.LogImportWarning($"Failed to import VPK: {ex.Message}");
             }
         }
     }

@@ -191,7 +191,10 @@ namespace Source2Unity.Editor.Importers
                         File.WriteAllBytes(outputPath, data);
                         count++;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Source2Unity] Failed to extract {entry.GetFullPath()}: {ex.Message}");
+                    }
                 }
             }
 
