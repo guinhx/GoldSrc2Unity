@@ -150,7 +150,8 @@ namespace Source2Unity.Formats.Mdl.Parsers
                 Width = texture.Width,
                 Height = texture.Height,
                 Flags = texture.Flags,
-                PixelData = pixelData
+                PixelData = pixelData,
+                PaletteIndices = indices
             };
         }
 
@@ -394,56 +395,53 @@ namespace Source2Unity.Formats.Mdl.Parsers
 
             long animBaseOffset = seq.AnimIndex;
 
-            for (int blend = 0; blend < seq.NumBlends; blend++)
+            for (int bone = 0; bone < numBones; bone++)
             {
-                for (int bone = 0; bone < numBones; bone++)
+                long animStructOffset = animBaseOffset + bone * sizeof(MdlAnim);
+                reader.Seek(animStructOffset);
+                var anim = reader.ReadStruct<MdlAnim>();
+
+                var posValues = new float[seq.NumFrames * 3];
+                var rotValues = new float[seq.NumFrames * 3];
+
+                for (int channel = 0; channel < 6; channel++)
                 {
-                    long animStructOffset = animBaseOffset + (blend * numBones + bone) * sizeof(MdlAnim);
-                    reader.Seek(animStructOffset);
-                    var anim = reader.ReadStruct<MdlAnim>();
+                    ushort offset = anim.Offset[channel];
+                    if (offset == 0) continue;
 
-                    var posValues = new float[seq.NumFrames * 3];
-                    var rotValues = new float[seq.NumFrames * 3];
+                    long dataOffset = animStructOffset + offset;
+                    reader.Seek(dataOffset);
 
-                    for (int channel = 0; channel < 6; channel++)
+                    for (int frame = 0; frame < seq.NumFrames;)
                     {
-                        ushort offset = anim.Offset[channel];
-                        if (offset == 0) continue;
+                        var control = reader.ReadStruct<MdlAnimValue>();
+                        int valid = control.Valid;
+                        int total = control.Total;
 
-                        long dataOffset = animStructOffset + offset;
-                        reader.Seek(dataOffset);
-
-                        for (int frame = 0; frame < seq.NumFrames;)
+                        short lastValue = 0;
+                        for (int j = 0; j < total && frame < seq.NumFrames; j++, frame++)
                         {
-                            var control = reader.ReadStruct<MdlAnimValue>();
-                            int valid = control.Valid;
-                            int total = control.Total;
-
-                            short lastValue = 0;
-                            for (int j = 0; j < total && frame < seq.NumFrames; j++, frame++)
+                            if (j < valid)
                             {
-                                if (j < valid)
-                                {
-                                    var val = reader.ReadStruct<MdlAnimValue>();
-                                    lastValue = val.Value;
-                                }
-
-                                if (channel < 3)
-                                    posValues[frame * 3 + channel] = lastValue;
-                                else
-                                    rotValues[frame * 3 + (channel - 3)] = lastValue;
+                                var val = reader.ReadStruct<MdlAnimValue>();
+                                lastValue = val.Value;
                             }
+
+                            if (channel < 3)
+                                posValues[frame * 3 + channel] = lastValue;
+                            else
+                                rotValues[frame * 3 + (channel - 3)] = lastValue;
                         }
                     }
+                }
 
-                    for (int f = 0; f < seq.NumFrames; f++)
+                for (int f = 0; f < seq.NumFrames; f++)
+                {
+                    frames[f][bone] = new MdlBoneFrame
                     {
-                        frames[f][bone] = new MdlBoneFrame
-                        {
-                            Position = new Vector3F(posValues[f * 3], posValues[f * 3 + 1], posValues[f * 3 + 2]),
-                            Rotation = new Vector3F(rotValues[f * 3], rotValues[f * 3 + 1], rotValues[f * 3 + 2])
-                        };
-                    }
+                        Position = new Vector3F(posValues[f * 3], posValues[f * 3 + 1], posValues[f * 3 + 2]),
+                        Rotation = new Vector3F(rotValues[f * 3], rotValues[f * 3 + 1], rotValues[f * 3 + 2])
+                    };
                 }
             }
 

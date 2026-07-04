@@ -71,6 +71,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
         public int Height { get; init; }
         public int Flags { get; init; }
         public byte[] PixelData { get; init; }
+        public byte[] PaletteIndices { get; init; }
     }
 
     public sealed class MdlParsedSequence

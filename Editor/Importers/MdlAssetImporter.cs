@@ -66,14 +66,8 @@ namespace Source2Unity.Editor.Importers
 
                 unsafe
                 {
-                    var pos = new Vector3(
-                        bone.Value[0] * GoldSrcScale,
-                        bone.Value[2] * GoldSrcScale,
-                        bone.Value[1] * GoldSrcScale);
-                    var rot = Quaternion.Euler(
-                        -bone.Value[3] * Mathf.Rad2Deg,
-                        -bone.Value[5] * Mathf.Rad2Deg,
-                        -bone.Value[4] * Mathf.Rad2Deg);
+                    var pos = GoldSrcPositionToUnity(bone.Value[0], bone.Value[1], bone.Value[2]);
+                    var rot = GoldSrcRotationToUnity(bone.Value[3], bone.Value[4], bone.Value[5]);
 
                     boneObj.transform.localPosition = pos;
                     boneObj.transform.localRotation = rot;
@@ -126,12 +120,12 @@ namespace Source2Unity.Editor.Importers
 
                     if ((flags & MdlTextureFlags.Masked) != 0)
                     {
-                        if (r == 0 && g == 0 && b == 255)
+                        if (tex.PaletteIndices != null && tex.PaletteIndices[p] == 255)
                             a = 0;
                     }
                     else if ((flags & MdlTextureFlags.Alpha) != 0)
                     {
-                        if (p == pixels.Length - 1 || (r == 0 && g == 0 && b == 0))
+                        if (tex.PaletteIndices != null && tex.PaletteIndices[p] == 255)
                             a = 0;
                     }
 
@@ -432,23 +426,20 @@ namespace Source2Unity.Editor.Importers
 
                         unsafe
                         {
-                            float px = (bone.Value[0] + frame.Position.X * bone.Scale[0]) * GoldSrcScale;
-                            float py = (bone.Value[1] + frame.Position.Y * bone.Scale[1]) * GoldSrcScale;
-                            float pz = (bone.Value[2] + frame.Position.Z * bone.Scale[2]) * GoldSrcScale;
+                            float gx = bone.Value[0] + frame.Position.X * bone.Scale[0];
+                            float gy = bone.Value[1] + frame.Position.Y * bone.Scale[1];
+                            float gz = bone.Value[2] + frame.Position.Z * bone.Scale[2];
 
-                            posX[f] = new Keyframe(time, pz);
-                            posY[f] = new Keyframe(time, px);
-                            posZ[f] = new Keyframe(time, py);
+                            var pos = GoldSrcPositionToUnity(gx, gy, gz);
+                            posX[f] = new Keyframe(time, pos.x);
+                            posY[f] = new Keyframe(time, pos.y);
+                            posZ[f] = new Keyframe(time, pos.z);
 
                             float rx = bone.Value[3] + frame.Rotation.X * bone.Scale[3];
                             float ry = bone.Value[4] + frame.Rotation.Y * bone.Scale[4];
                             float rz = bone.Value[5] + frame.Rotation.Z * bone.Scale[5];
 
-                            var quat = Quaternion.Euler(
-                                -rx * Mathf.Rad2Deg,
-                                -rz * Mathf.Rad2Deg,
-                                -ry * Mathf.Rad2Deg);
-
+                            var quat = GoldSrcRotationToUnity(rx, ry, rz);
                             rotX[f] = new Keyframe(time, quat.x);
                             rotY[f] = new Keyframe(time, quat.y);
                             rotZ[f] = new Keyframe(time, quat.z);
@@ -513,12 +504,25 @@ namespace Source2Unity.Editor.Importers
 
         private static Vector3 GoldSrcToUnity(Vector3F v)
         {
-            return new Vector3(v.Y * GoldSrcScale, v.Z * GoldSrcScale, v.X * GoldSrcScale);
+            return new Vector3(v.X * GoldSrcScale, v.Z * GoldSrcScale, -v.Y * GoldSrcScale);
         }
 
         private static Vector3 GoldSrcToUnityDir(Vector3F v)
         {
-            return new Vector3(v.Y, v.Z, v.X);
+            return new Vector3(v.X, v.Z, -v.Y);
+        }
+
+        private static Vector3 GoldSrcPositionToUnity(float gx, float gy, float gz)
+        {
+            return new Vector3(gx * GoldSrcScale, gz * GoldSrcScale, -gy * GoldSrcScale);
+        }
+
+        private static Quaternion GoldSrcRotationToUnity(float rx, float ry, float rz)
+        {
+            var qx = Quaternion.AngleAxis(-rx * Mathf.Rad2Deg, Vector3.right);
+            var qz = Quaternion.AngleAxis(-rz * Mathf.Rad2Deg, Vector3.up);
+            var qy = Quaternion.AngleAxis(ry * Mathf.Rad2Deg, Vector3.forward);
+            return qz * qx * qy;
         }
 
         #endregion
