@@ -24,6 +24,9 @@ namespace Source2Unity.Formats.Mdl.Parsers
         public IReadOnlyList<MdlParsedBodyPart> ParsedBodyParts { get; init; }
         public IReadOnlyList<MdlParsedTexture> ParsedTextures { get; init; }
         public IReadOnlyList<MdlParsedSequence> ParsedSequences { get; init; }
+        public short[] SkinRefTable { get; init; }
+        public int NumSkinRef { get; init; }
+        public int NumSkinFamilies { get; init; }
     }
 
     public sealed class MdlParsedBodyPart

@@ -34,6 +34,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
             var parsedTextures = ParseTextures(reader, textures, filePath, header);
             var parsedBodyParts = ParseBodyParts(reader, bodyParts);
             var parsedSequences = ParseSequences(reader, sequences, sequenceGroups, bones.Length, filePath);
+            var skinRefTable = ReadSkinRefTable(reader, header);
 
             return new MdlParseResult
             {
@@ -50,7 +51,10 @@ namespace Source2Unity.Formats.Mdl.Parsers
                 Attachments = attachments,
                 ParsedBodyParts = parsedBodyParts,
                 ParsedTextures = parsedTextures,
-                ParsedSequences = parsedSequences
+                ParsedSequences = parsedSequences,
+                SkinRefTable = skinRefTable,
+                NumSkinRef = header.NumSkinRef,
+                NumSkinFamilies = header.NumSkinFamilies
             };
         }
 
@@ -399,6 +403,9 @@ namespace Source2Unity.Formats.Mdl.Parsers
                         int valid = control.Valid;
                         int total = control.Total;
 
+                        if (total == 0) break;
+                        if (total < valid) { valid = total; }
+
                         short lastValue = 0;
                         for (int j = 0; j < total && frame < seq.NumFrames; j++, frame++)
                         {
@@ -427,6 +434,22 @@ namespace Source2Unity.Formats.Mdl.Parsers
             }
 
             return frames;
+        }
+
+        #endregion
+
+        #region Skin Reference Table
+
+        private static short[] ReadSkinRefTable(BinaryStreamReader reader, MdlHeader header)
+        {
+            int count = header.NumSkinRef * header.NumSkinFamilies;
+            if (count <= 0 || header.SkinIndex <= 0) return Array.Empty<short>();
+
+            reader.Seek(header.SkinIndex);
+            var table = new short[count];
+            for (int i = 0; i < count; i++)
+                table[i] = reader.ReadInt16();
+            return table;
         }
 
         #endregion

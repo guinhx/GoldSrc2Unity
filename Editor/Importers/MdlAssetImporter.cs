@@ -8,7 +8,7 @@ using UnityEngine;
 
 namespace Source2Unity.Editor.Importers
 {
-    [ScriptedImporter(1, "mdl")]
+    [ScriptedImporter(3, "mdl")]
     public class MdlAssetImporter : ScriptedImporter
     {
         private const float GoldSrcScale = 0.0254f;
@@ -49,17 +49,17 @@ namespace Source2Unity.Editor.Importers
             public float M10, M11, M12, M13;
             public float M20, M21, M22, M23;
 
-            public static GoldSrcMatrix FromAngleAndPos(float rx, float ry, float rz, float px, float py, float pz)
+            public static GoldSrcMatrix FromAngleAndPos(float pitch, float yaw, float roll, float px, float py, float pz)
             {
-                float sp = Mathf.Sin(rx), cp = Mathf.Cos(rx);
-                float sy = Mathf.Sin(ry), cy = Mathf.Cos(ry);
-                float sr = Mathf.Sin(rz), cr = Mathf.Cos(rz);
+                float sp = Mathf.Sin(pitch), cp = Mathf.Cos(pitch);
+                float sy = Mathf.Sin(yaw),   cy = Mathf.Cos(yaw);
+                float sr = Mathf.Sin(roll),  cr = Mathf.Cos(roll);
 
                 return new GoldSrcMatrix
                 {
-                    M00 = cp * cr, M01 = sy * sp * cr + cy * (-sr), M02 = cy * sp * cr + (-sy) * (-sr), M03 = px,
-                    M10 = cp * sr, M11 = sy * sp * sr + cy * cr,    M12 = cy * sp * sr + (-sy) * cr,    M13 = py,
-                    M20 = -sp,     M21 = sy * cp,                   M22 = cy * cp,                      M23 = pz
+                    M00 = cp * cy, M01 = sr * sp * cy + cr * (-sy), M02 = cr * sp * cy + (-sr) * (-sy), M03 = px,
+                    M10 = cp * sy, M11 = sr * sp * sy + cr * cy,    M12 = cr * sp * sy + (-sr) * cy,    M13 = py,
+                    M20 = -sp,     M21 = sr * cp,                   M22 = cr * cp,                      M23 = pz
                 };
             }
 
@@ -191,23 +191,29 @@ namespace Source2Unity.Editor.Importers
                 texture2d.wrapMode = TextureWrapMode.Repeat;
 
                 var pixels = new Color32[tex.Width * tex.Height];
-                for (int p = 0; p < pixels.Length; p++)
+                for (int row = 0; row < tex.Height; row++)
                 {
-                    int srcIdx = p * 3;
-                    if (srcIdx + 2 >= tex.PixelData.Length) break;
-
-                    byte r = tex.PixelData[srcIdx];
-                    byte g = tex.PixelData[srcIdx + 1];
-                    byte b = tex.PixelData[srcIdx + 2];
-                    byte a = 255;
-
-                    if (hasAlpha && tex.PaletteIndices != null && p < tex.PaletteIndices.Length)
+                    int srcRow = tex.Height - 1 - row;
+                    for (int col = 0; col < tex.Width; col++)
                     {
-                        if (tex.PaletteIndices[p] == 255)
-                            a = 0;
-                    }
+                        int srcPixel = srcRow * tex.Width + col;
+                        int dstPixel = row * tex.Width + col;
+                        int srcIdx = srcPixel * 3;
+                        if (srcIdx + 2 >= tex.PixelData.Length) continue;
 
-                    pixels[p] = new Color32(r, g, b, a);
+                        byte r = tex.PixelData[srcIdx];
+                        byte g = tex.PixelData[srcIdx + 1];
+                        byte b = tex.PixelData[srcIdx + 2];
+                        byte a = 255;
+
+                        if (hasAlpha && tex.PaletteIndices != null && srcPixel < tex.PaletteIndices.Length)
+                        {
+                            if (tex.PaletteIndices[srcPixel] == 255)
+                                a = 0;
+                        }
+
+                        pixels[dstPixel] = new Color32(r, g, b, a);
+                    }
                 }
 
                 texture2d.SetPixels32(pixels);
@@ -425,8 +431,9 @@ namespace Source2Unity.Editor.Importers
                         for (int s = 0; s < combinedMesh.subMeshCount; s++)
                         {
                             int skinRef = s < model.Meshes.Count ? model.Meshes[s].MeshStruct.SkinRef : 0;
-                            mats[s] = skinRef >= 0 && skinRef < materials.Count
-                                ? materials[skinRef]
+                            int texIdx = ResolveSkinRef(result, skinRef);
+                            mats[s] = texIdx >= 0 && texIdx < materials.Count
+                                ? materials[texIdx]
                                 : (materials.Count > 0 ? materials[0] : null);
                         }
                         smr.sharedMaterials = mats;
@@ -469,11 +476,11 @@ namespace Source2Unity.Editor.Importers
                 }
 
                 int texWidth = 1, texHeight = 1;
-                int skinRef = parsedMesh.MeshStruct.SkinRef;
-                if (result.ParsedTextures != null && skinRef >= 0 && skinRef < result.ParsedTextures.Count)
+                int texIdx = ResolveSkinRef(result, parsedMesh.MeshStruct.SkinRef);
+                if (result.ParsedTextures != null && texIdx >= 0 && texIdx < result.ParsedTextures.Count)
                 {
-                    texWidth = Math.Max(1, result.ParsedTextures[skinRef].Width);
-                    texHeight = Math.Max(1, result.ParsedTextures[skinRef].Height);
+                    texWidth = Math.Max(1, result.ParsedTextures[texIdx].Width);
+                    texHeight = Math.Max(1, result.ParsedTextures[texIdx].Height);
                 }
 
                 var indices = new List<int>();
@@ -485,10 +492,9 @@ namespace Source2Unity.Editor.Importers
                     EmitVertex(model, tri.V2, texWidth, texHeight, bindPoseVerts, bindPoseNorms, vertices, normals, uvs, boneWeights);
 
                     int baseIdx = vertexOffset;
-                    // Assimp outputs (v2, v1, v0) — reversed winding for LH coordinate systems
+                    indices.Add(baseIdx);
                     indices.Add(baseIdx + 2);
                     indices.Add(baseIdx + 1);
-                    indices.Add(baseIdx);
                     vertexOffset += 3;
                 }
 
@@ -559,6 +565,16 @@ namespace Source2Unity.Editor.Importers
         }
 
         #endregion
+
+        private static int ResolveSkinRef(MdlParseResult result, int skinRef)
+        {
+            if (result.SkinRefTable != null && result.SkinRefTable.Length > 0
+                && skinRef >= 0 && skinRef < result.NumSkinRef)
+            {
+                return result.SkinRefTable[skinRef];
+            }
+            return skinRef;
+        }
 
         #region Animation Clips
 
@@ -693,17 +709,24 @@ namespace Source2Unity.Editor.Importers
             return new Vector3(-gy * GoldSrcScale, gz * GoldSrcScale, gx * GoldSrcScale);
         }
 
+        /// <summary>
+        /// Converts GoldSrc Euler angles (radians) to a Unity quaternion.
+        /// Matches Valve's AngleQuaternion exactly:
+        ///   angles[0]=v3 (pitch), angles[1]=v4 (yaw), angles[2]=v5 (roll)
+        ///   Quaternion order: Q = Qroll * Qyaw * Qpitch
+        /// Then remaps axes GS(X,Y,Z) -> Unity(-Y,Z,X) with RH->LH conjugation.
+        /// </summary>
         private static Quaternion GoldSrcRotationToUnity(float v3, float v4, float v5)
         {
-            float hx = v4 * 0.5f, hy = v3 * 0.5f, hz = v5 * 0.5f;
-            float cx = Mathf.Cos(hx), sx = Mathf.Sin(hx);
-            float cy = Mathf.Cos(hy), sy = Mathf.Sin(hy);
-            float cz = Mathf.Cos(hz), sz = Mathf.Sin(hz);
+            float hp = v3 * 0.5f, hy = v4 * 0.5f, hr = v5 * 0.5f;
+            float sp = Mathf.Sin(hp), cp = Mathf.Cos(hp);
+            float sy = Mathf.Sin(hy), cy = Mathf.Cos(hy);
+            float sr = Mathf.Sin(hr), cr = Mathf.Cos(hr);
 
-            float gw = cz * cy * cx + sz * sy * sx;
-            float gx = cz * cy * sx - sz * sy * cx;
-            float gy = cz * sy * cx + sz * cy * sx;
-            float gz = sz * cy * cx - cz * sy * sx;
+            float gx = sp * cy * cr - cp * sy * sr;
+            float gy = cp * sy * cr + sp * cy * sr;
+            float gz = cp * cy * sr - sp * sy * cr;
+            float gw = cp * cy * cr + sp * sy * sr;
 
             return new Quaternion(gy, -gz, -gx, gw);
         }
