@@ -79,13 +79,11 @@ namespace Source2Unity.Editor.Importers
 
         private static unsafe string GetBoneName(MdlBone bone, int index)
         {
-            fixed (byte* ptr = bone.Name)
-            {
-                int len = 0;
-                while (len < 32 && ptr[len] != 0) len++;
-                if (len == 0) return $"bone_{index}";
-                return System.Text.Encoding.ASCII.GetString(ptr, len);
-            }
+            byte* ptr = bone.Name;
+            int len = 0;
+            while (len < 32 && ptr[len] != 0) len++;
+            if (len == 0) return $"bone_{index}";
+            return System.Text.Encoding.ASCII.GetString(ptr, len);
         }
 
         #endregion
