@@ -1,0 +1,18 @@
+{
+  "name": "com.betelcorp.source2unity.Editor",
+  "rootNamespace": "Source2Unity.Editor",
+  "references": [
+    "com.betelcorp.source2unity"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

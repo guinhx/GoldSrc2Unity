@@ -1,0 +1,21 @@
+{
+  "name": "com.betelcorp.source2unity",
+  "version": "0.1.0",
+  "displayName": "Source2Unity",
+  "description": "Import Valve engine assets (GoldSrc MDL, Source VPK) into Unity. Supports MDL v10 skeletal models with textures and animations, and VPK v1/v2 archive extraction.",
+  "unity": "2021.3",
+  "documentationUrl": "https://github.com/BetelCorp/Source2Unity",
+  "license": "Apache-2.0",
+  "keywords": [
+    "valve",
+    "goldsrc",
+    "half-life",
+    "mdl",
+    "vpk",
+    "source-engine",
+    "importer"
+  ],
+  "author": {
+    "name": "BetelCorp"
+  }
+}
