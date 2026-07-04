@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.InteropServices;
 
 namespace Source2Unity.Formats.Mdl.Structures
@@ -16,14 +17,16 @@ namespace Source2Unity.Formats.Mdl.Structures
         public int Index;
     }
 
-    public static class MdlTextureFlags
+    [Flags]
+    public enum MdlTextureFlags
     {
-        public const int FlatShade = 0x0001;
-        public const int Chrome = 0x0002;
-        public const int FullBright = 0x0004;
-        public const int NoMips = 0x0008;
-        public const int Alpha = 0x0010;
-        public const int Additive = 0x0020;
-        public const int Masked = 0x0040;
+        None = 0x0000,
+        FlatShade = 0x0001,
+        Chrome = 0x0002,
+        FullBright = 0x0004,
+        NoMips = 0x0008,
+        Alpha = 0x0010,
+        Additive = 0x0020,
+        Masked = 0x0040
     }
 }

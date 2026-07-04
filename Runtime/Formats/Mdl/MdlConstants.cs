@@ -1,5 +1,3 @@
-using System;
-
 namespace Source2Unity.Formats.Mdl
 {
     public static class MdlConstants
@@ -20,17 +18,5 @@ namespace Source2Unity.Formats.Mdl
         public const int MaxStudioSequences = 2048;
         public const int MaxStudioSkins = 100;
         public const int MaxStudioEvents = 1024;
-    }
-
-    [Flags]
-    public enum MdlTextureFlags
-    {
-        None = 0x0000,
-        Chrome = 0x0002,
-        Alpha = 0x0010,
-        Additive = 0x0020,
-        Masked = 0x0040,
-        FullBright = 0x0004,
-        FlatShade = 0x0001
     }
 }

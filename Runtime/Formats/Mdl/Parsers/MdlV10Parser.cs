@@ -62,14 +62,16 @@ namespace Source2Unity.Formats.Mdl.Parsers
                 throw new InvalidDataException($"Unsupported MDL version: {header.Version}, expected {MdlConstants.VersionGoldSrc}.");
         }
 
-        private static unsafe string ReadFixedName(in MdlHeader header)
+        private static unsafe string FixedBytesToString(byte* ptr, int maxLen)
         {
-            fixed (byte* ptr = header.Name)
-            {
-                int len = 0;
-                while (len < 64 && ptr[len] != 0) len++;
-                return Encoding.ASCII.GetString(ptr, len);
-            }
+            int len = 0;
+            while (len < maxLen && ptr[len] != 0) len++;
+            return Encoding.ASCII.GetString(ptr, len);
+        }
+
+        private static unsafe string ReadFixedName(MdlHeader header)
+        {
+            return FixedBytesToString(header.Name, 64);
         }
 
         private static unsafe T[] ReadArray<T>(BinaryStreamReader reader, int offset, int count) where T : unmanaged
@@ -85,7 +87,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
             BinaryStreamReader reader,
             MdlTexture[] textures,
             string filePath,
-            in MdlHeader header)
+            MdlHeader header)
         {
             var result = new List<MdlParsedTexture>(textures.Length);
 
@@ -119,15 +121,9 @@ namespace Source2Unity.Formats.Mdl.Parsers
             return result;
         }
 
-        private static unsafe MdlParsedTexture ParseSingleTexture(BinaryStreamReader reader, in MdlTexture texture)
+        private static unsafe MdlParsedTexture ParseSingleTexture(BinaryStreamReader reader, MdlTexture texture)
         {
-            string name;
-            fixed (byte* ptr = texture.Name)
-            {
-                int len = 0;
-                while (len < 64 && ptr[len] != 0) len++;
-                name = Encoding.ASCII.GetString(ptr, len);
-            }
+            string name = FixedBytesToString(texture.Name, 64);
 
             int pixelCount = texture.Width * texture.Height;
             reader.Seek(texture.Index);
@@ -168,12 +164,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
                 string bpName;
                 unsafe
                 {
-                    fixed (byte* ptr = bp.Name)
-                    {
-                        int len = 0;
-                        while (len < 64 && ptr[len] != 0) len++;
-                        bpName = Encoding.ASCII.GetString(ptr, len);
-                    }
+                    bpName = FixedBytesToString(bp.Name, 64);
                 }
 
                 reader.Seek(bp.ModelIndex);
@@ -195,15 +186,9 @@ namespace Source2Unity.Formats.Mdl.Parsers
             return result;
         }
 
-        private static unsafe MdlParsedModel ParseModel(BinaryStreamReader reader, in MdlModel model)
+        private static unsafe MdlParsedModel ParseModel(BinaryStreamReader reader, MdlModel model)
         {
-            string name;
-            fixed (byte* ptr = model.Name)
-            {
-                int len = 0;
-                while (len < 64 && ptr[len] != 0) len++;
-                name = Encoding.ASCII.GetString(ptr, len);
-            }
+            string name = FixedBytesToString(model.Name, 64);
 
             reader.Seek(model.VertIndex);
             var vertices = reader.ReadStructArray<Vector3F>(model.NumVerts);
@@ -238,7 +223,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
             };
         }
 
-        private static MdlParsedMesh ParseMesh(BinaryStreamReader reader, in MdlMesh mesh)
+        private static MdlParsedMesh ParseMesh(BinaryStreamReader reader, MdlMesh mesh)
         {
             reader.Seek(mesh.TriIndex);
             var triangles = DecodeTriangleCommands(reader);
@@ -331,12 +316,8 @@ namespace Source2Unity.Formats.Mdl.Parsers
                     string name;
                     unsafe
                     {
-                        fixed (byte* ptr = seq.Label)
-                        {
-                            int len = 0;
-                            while (len < 32 && ptr[len] != 0) len++;
-                            name = Encoding.ASCII.GetString(ptr, len);
-                        }
+                        var seqCopy = seq;
+                        name = FixedBytesToString(seqCopy.Label, 32);
                     }
 
                     BinaryStreamReader animReader = reader;
@@ -386,7 +367,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
 
         private static unsafe MdlBoneFrame[][] DecompressAnimation(
             BinaryStreamReader reader,
-            in MdlSequenceDesc seq,
+            MdlSequenceDesc seq,
             int numBones)
         {
             var frames = new MdlBoneFrame[seq.NumFrames][];
