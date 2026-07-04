@@ -1,0 +1,94 @@
+# Unity (when opened as or embedded in a project)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
+[Rr]ecordings/**/*.mp4
+
+# Unity auto-generated
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Visual Studio / Rider / VS Code
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa]rm/
+[Aa]rm64/
+bld/
+out/
+*.dll
+*.exe
+*.app
+*.dylib
+*.so
+*.a
+*.lib
+*.exp
+*.ilk
+*.meta.tmp
+
+# NuGet
+*.nupkg
+**/packages/*
+!**/packages/build/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Logs and temp
+*.log
+*.tmp
+*.temp
+*.cache
+*.swp
+# Editor backup files (exclude Unity Documentation~ folder)
+*~
+!Documentation~/
+!Documentation~/**
+
+# Test / coverage
+[Tt]est[Rr]esults/
+[Cc]overage/
+*.coverage
+*.coveragexml
+
+# Local secrets and env
+.env
+.env.*
+!.env.example
+*.pem
+credentials.json

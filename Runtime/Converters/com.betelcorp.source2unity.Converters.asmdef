@@ -1,0 +1,16 @@
+{
+  "name": "com.betelcorp.source2unity.Converters",
+  "rootNamespace": "Source2Unity.Converters",
+  "references": [
+    "com.betelcorp.source2unity"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

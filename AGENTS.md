@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Unity package for importing Valve engine assets (GoldSrc and Source) directly into the Unity Editor. Provides `ScriptedImporter` implementations that allow `.mdl` and `.vpk` files to be dragged into a Unity project and automatically converted to native Unity assets.
+Unity package for importing Valve engine assets (GoldSrc and Source) directly into the Unity Editor. Provides `ScriptedImporter` implementations that allow `.mdl`, `.vpk`, `.vtf`, and `.vmt` files to be dragged into a Unity project and automatically converted to native Unity assets.
 
 Package identifier: `com.betelcorp.source2unity`
 
@@ -10,20 +10,34 @@ Package identifier: `com.betelcorp.source2unity`
 
 ```
 Editor/           Unity-dependent import logic (ScriptedImporters, EditorWindows)
+  Importers/      MdlAssetImporter, VpkAssetImporter, VtfAssetImporter, VmtAssetImporter, VpkBrowserWindow
 Runtime/
   Formats/        Pure C# format parsers — zero Unity dependencies
-    Common/       Shared infrastructure (binary reading, interfaces)
+    Common/       Shared infrastructure (binary reading, IContentResolver)
     Mdl/          MDL model format (GoldSrc v10, with version detection for Quake v6 and Source v44+)
     Vpk/          VPK archive format (Source Engine v1 and v2)
+    KeyValues/    KeyValues v1 text parser (VMT, VDF, RES)
+    Vtf/          VTF texture format (Source Engine 7.0–7.3+, 2D flat textures)
+    Vmt/          VMT material format (KeyValues-based)
+  Shaders/        Source Standard / Lightmapped / Unlit / Sky / GoldSrc URP shaders (requires URP)
+  Converters/     Shared data → Unity object builders and runtime loaders
+    Mdl/          MdlModelBuilder
+    Vtf/          VtfTextureBuilder, VtfFrameAnimator, VtfImportData
+    Vmt/          VmtMaterialBuilder, SourceShaderMapping
+    Pipeline/     AssetLoadContext, AssetConverterRegistry
+    Loaders/      MdlRuntimeLoader, VpkRuntimeLoader
   Extensions/     Utility extension methods (Span, string helpers)
   Internal/       Compiler polyfills (IsExternalInit)
 ```
 
-The `Runtime/Formats/` layer is intentionally Unity-agnostic. It operates on `System.IO.Stream` and produces plain data objects. Only the `Editor/` layer references `UnityEngine` or `UnityEditor` to convert parsed data into Unity assets.
+The `Runtime/Formats/` layer is intentionally Unity-agnostic. It operates on `System.IO.Stream` and produces plain data objects. `Runtime/Converters/` references Unity Engine and is shared by Editor importers and runtime loaders. Only the `Editor/` layer references `UnityEditor`.
 
 Assembly definitions:
 - `com.betelcorp.source2unity` (Runtime) — `allowUnsafeCode: true`, `noEngineReferences: true`
-- `com.betelcorp.source2unity.Editor` (Editor only) — references the Runtime assembly
+- `com.betelcorp.source2unity.Converters` (Runtime + Editor) — references Formats assembly, Unity Engine
+- `com.betelcorp.source2unity.Editor` (Editor only) — references Formats and Converters assemblies
+
+**URP required** for custom Source2Unity shaders (`Runtime/Shaders/`). See `Documentation~/source-engine-shaders.md` for engine shading research and VMT→shader mapping.
 
 ## Supported Formats
 
@@ -34,6 +48,9 @@ Assembly definitions:
 | MDL (Studio Model) | v44-49 (Source Engine) | Detected, not parsed |
 | VPK (Valve Pak) | v1 | Fully supported |
 | VPK (Valve Pak) | v2 | Fully supported |
+| KeyValues | v1 text | Fully supported (#include merge, circular guard) |
+| VTF (Valve Texture) | 7.0–7.3 | Cubemap, volume (Texture3D), animation frames, sprite sheet |
+| VMT (Valve Material) | KeyValues v1 | Source2Unity URP shaders; LightmappedGeneric, ambient cube, `$envmap env_cubemap`, `$phongexponenttexture` |
 
 ## Coding Standards
 

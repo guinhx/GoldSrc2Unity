@@ -8,6 +8,8 @@ namespace Source2Unity.Formats.Common
         MdlSource,
         MdlSequenceGroup,
         VpkV1,
-        VpkV2
+        VpkV2,
+        Vtf,
+        Vmt
     }
 }

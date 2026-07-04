@@ -2,7 +2,8 @@
   "name": "com.betelcorp.source2unity.Editor",
   "rootNamespace": "Source2Unity.Editor",
   "references": [
-    "com.betelcorp.source2unity"
+    "com.betelcorp.source2unity",
+    "com.betelcorp.source2unity.Converters"
   ],
   "includePlatforms": [
     "Editor"

@@ -84,6 +84,15 @@ namespace Source2Unity.Formats.Mdl.Parsers
         public float Fps { get; init; }
         public int NumFrames { get; init; }
         public MdlBoneFrame[][] BoneFrames { get; init; }
+        public IReadOnlyList<MdlParsedEvent> Events { get; init; }
+    }
+
+    public sealed class MdlParsedEvent
+    {
+        public int Frame { get; init; }
+        public int EventId { get; init; }
+        public int Type { get; init; }
+        public string Options { get; init; }
     }
 
     public struct MdlBoneFrame

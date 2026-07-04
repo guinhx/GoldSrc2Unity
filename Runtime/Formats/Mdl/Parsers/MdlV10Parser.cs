@@ -12,10 +12,15 @@ namespace Source2Unity.Formats.Mdl.Parsers
         public MdlParseResult Parse(string filePath)
         {
             using var reader = new BinaryStreamReader(filePath);
-            return Parse(reader, filePath);
+            return Parse(reader, filePath, new DiskContentResolver());
         }
 
-        public MdlParseResult Parse(BinaryStreamReader reader, string filePath)
+        public MdlParseResult Parse(BinaryStreamReader reader, string logicalPath)
+        {
+            return Parse(reader, logicalPath, null);
+        }
+
+        public MdlParseResult Parse(BinaryStreamReader reader, string logicalPath, IContentResolver resolver)
         {
             var header = reader.ReadStruct<MdlHeader>();
             ValidateHeader(header);
@@ -31,9 +36,9 @@ namespace Source2Unity.Formats.Mdl.Parsers
             var bodyParts = ReadArray<MdlBodyPart>(reader, header.BodyPartIndex, header.NumBodyParts);
             var attachments = ReadArray<MdlAttachment>(reader, header.AttachmentIndex, header.NumAttachments);
 
-            var parsedTextures = ParseTextures(reader, textures, filePath, header);
+            var parsedTextures = ParseTextures(reader, textures, logicalPath, header, resolver);
             var parsedBodyParts = ParseBodyParts(reader, bodyParts);
-            var parsedSequences = ParseSequences(reader, sequences, sequenceGroups, bones.Length, filePath);
+            var parsedSequences = ParseSequences(reader, sequences, sequenceGroups, bones.Length, logicalPath, resolver);
             var skinRefTable = ReadSkinRefTable(reader, header);
 
             return new MdlParseResult
@@ -90,21 +95,26 @@ namespace Source2Unity.Formats.Mdl.Parsers
         private static List<MdlParsedTexture> ParseTextures(
             BinaryStreamReader reader,
             MdlTexture[] textures,
-            string filePath,
-            MdlHeader header)
+            string logicalPath,
+            MdlHeader header,
+            IContentResolver resolver)
         {
             var result = new List<MdlParsedTexture>(textures.Length);
 
             BinaryStreamReader textureReader = reader;
             bool externalTextures = textures.Length == 0 && header.NumTextures == 0;
+            bool ownsTextureReader = false;
 
             if (externalTextures)
             {
-                string texturePath = GetExternalTexturePath(filePath);
-                if (!File.Exists(texturePath))
+                if (string.IsNullOrEmpty(logicalPath))
                     return result;
 
-                textureReader = new BinaryStreamReader(texturePath);
+                string texturePath = MdlExternalPaths.GetExternalTexturePath(logicalPath);
+                if (!TryOpenExternalReader(texturePath, resolver, out textureReader))
+                    return result;
+
+                ownsTextureReader = true;
                 var texHeader = textureReader.ReadStruct<MdlHeader>();
                 textures = ReadArray<MdlTexture>(textureReader, texHeader.TextureIndex, texHeader.NumTextures);
             }
@@ -118,7 +128,7 @@ namespace Source2Unity.Formats.Mdl.Parsers
             }
             finally
             {
-                if (externalTextures)
+                if (ownsTextureReader)
                     textureReader.Dispose();
             }
 
@@ -308,7 +318,8 @@ namespace Source2Unity.Formats.Mdl.Parsers
             MdlSequenceDesc[] sequences,
             MdlSequenceGroup[] seqGroups,
             int numBones,
-            string filePath)
+            string logicalPath,
+            IContentResolver resolver)
         {
             var result = new List<MdlParsedSequence>(sequences.Length);
             var externalReaders = new Dictionary<int, BinaryStreamReader>();
@@ -330,25 +341,25 @@ namespace Source2Unity.Formats.Mdl.Parsers
                     {
                         if (!externalReaders.TryGetValue(seq.SeqGroup, out animReader))
                         {
-                            string seqPath = GetExternalSequencePath(filePath, seq.SeqGroup);
-                            if (!File.Exists(seqPath))
+                            if (string.IsNullOrEmpty(logicalPath))
                             {
-                                result.Add(new MdlParsedSequence
-                                {
-                                    Name = name,
-                                    Descriptor = seq,
-                                    Fps = seq.Fps,
-                                    NumFrames = seq.NumFrames,
-                                    BoneFrames = Array.Empty<MdlBoneFrame[]>()
-                                });
+                                result.Add(CreateEmptySequence(seq, name));
                                 continue;
                             }
-                            animReader = new BinaryStreamReader(seqPath);
+
+                            string seqPath = MdlExternalPaths.GetExternalSequencePath(logicalPath, seq.SeqGroup);
+                            if (!TryOpenExternalReader(seqPath, resolver, out animReader))
+                            {
+                                result.Add(CreateEmptySequence(seq, name));
+                                continue;
+                            }
+
                             externalReaders[seq.SeqGroup] = animReader;
                         }
                     }
 
                     var boneFrames = DecompressAnimation(animReader, seq, numBones);
+                    var events = ReadSequenceEvents(reader, seq);
 
                     result.Add(new MdlParsedSequence
                     {
@@ -356,7 +367,8 @@ namespace Source2Unity.Formats.Mdl.Parsers
                         Descriptor = seq,
                         Fps = seq.Fps,
                         NumFrames = seq.NumFrames,
-                        BoneFrames = boneFrames
+                        BoneFrames = boneFrames,
+                        Events = events
                     });
                 }
             }
@@ -367,6 +379,43 @@ namespace Source2Unity.Formats.Mdl.Parsers
             }
 
             return result;
+        }
+
+        private static MdlParsedSequence CreateEmptySequence(MdlSequenceDesc seq, string name)
+        {
+            return new MdlParsedSequence
+            {
+                Name = name,
+                Descriptor = seq,
+                Fps = seq.Fps,
+                NumFrames = seq.NumFrames,
+                BoneFrames = Array.Empty<MdlBoneFrame[]>(),
+                Events = Array.Empty<MdlParsedEvent>()
+            };
+        }
+
+        private static bool TryOpenExternalReader(
+            string logicalPath,
+            IContentResolver resolver,
+            out BinaryStreamReader reader)
+        {
+            reader = null;
+
+            if (resolver != null)
+            {
+                if (!resolver.TryOpenRead(logicalPath, out var stream))
+                    return false;
+
+                reader = new BinaryStreamReader(stream);
+                return true;
+            }
+
+            string fileSystemPath = logicalPath.Replace('/', Path.DirectorySeparatorChar);
+            if (!File.Exists(fileSystemPath))
+                return false;
+
+            reader = new BinaryStreamReader(fileSystemPath);
+            return true;
         }
 
         private static unsafe MdlBoneFrame[][] DecompressAnimation(
@@ -438,6 +487,41 @@ namespace Source2Unity.Formats.Mdl.Parsers
 
         #endregion
 
+        #region Sequence Events
+
+        private static unsafe List<MdlParsedEvent> ReadSequenceEvents(BinaryStreamReader reader, MdlSequenceDesc seq)
+        {
+            if (seq.NumEvents <= 0 || seq.EventIndex <= 0)
+                return new List<MdlParsedEvent>(0);
+
+            reader.Seek(seq.EventIndex);
+            var events = new List<MdlParsedEvent>(seq.NumEvents);
+
+            for (int i = 0; i < seq.NumEvents; i++)
+            {
+                var ev = reader.ReadStruct<MdlEvent>();
+
+                byte* ptr = ev.Options;
+                int len = 0;
+                while (len < 64 && ptr[len] != 0) len++;
+                string options = len > 0
+                    ? System.Text.Encoding.ASCII.GetString(ptr, len)
+                    : string.Empty;
+
+                events.Add(new MdlParsedEvent
+                {
+                    Frame = ev.Frame,
+                    EventId = ev.Event,
+                    Type = ev.Type,
+                    Options = options
+                });
+            }
+
+            return events;
+        }
+
+        #endregion
+
         #region Skin Reference Table
 
         private static short[] ReadSkinRefTable(BinaryStreamReader reader, MdlHeader header)
@@ -450,26 +534,6 @@ namespace Source2Unity.Formats.Mdl.Parsers
             for (int i = 0; i < count; i++)
                 table[i] = reader.ReadInt16();
             return table;
-        }
-
-        #endregion
-
-        #region External Files
-
-        internal static string GetExternalTexturePath(string mainFilePath)
-        {
-            string dir = Path.GetDirectoryName(mainFilePath) ?? ".";
-            string baseName = Path.GetFileNameWithoutExtension(mainFilePath);
-            string ext = Path.GetExtension(mainFilePath);
-            return Path.Combine(dir, baseName + "T" + ext);
-        }
-
-        internal static string GetExternalSequencePath(string mainFilePath, int groupIndex)
-        {
-            string dir = Path.GetDirectoryName(mainFilePath) ?? ".";
-            string baseName = Path.GetFileNameWithoutExtension(mainFilePath);
-            string ext = Path.GetExtension(mainFilePath);
-            return Path.Combine(dir, baseName + groupIndex.ToString("D2") + ext);
         }
 
         #endregion
