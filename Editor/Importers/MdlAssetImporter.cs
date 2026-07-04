@@ -341,6 +341,19 @@ namespace Source2Unity.Editor.Importers
             var boneWeights = new List<BoneWeight>();
             var subMeshTriangles = new List<List<int>>();
 
+            // GoldSrc stores vertices in bone-local space.
+            // Unity SkinnedMeshRenderer expects vertices in model space (bind pose).
+            // Pre-compute bone world matrices to transform vertices from bone-local → model space.
+            Matrix4x4[] boneWorldMatrices = null;
+            Matrix4x4 rootInverse = Matrix4x4.identity;
+            if (bones.Length > 0)
+            {
+                rootInverse = rootTransform.worldToLocalMatrix;
+                boneWorldMatrices = new Matrix4x4[bones.Length];
+                for (int i = 0; i < bones.Length; i++)
+                    boneWorldMatrices[i] = rootInverse * bones[i].localToWorldMatrix;
+            }
+
             int vertexOffset = 0;
 
             foreach (var parsedMesh in model.Meshes)
@@ -363,9 +376,9 @@ namespace Source2Unity.Editor.Importers
 
                 foreach (var tri in parsedMesh.Triangles)
                 {
-                    AddSkinnedVertex(model, tri.V0, texWidth, texHeight, vertices, normals, uvs, boneWeights);
-                    AddSkinnedVertex(model, tri.V1, texWidth, texHeight, vertices, normals, uvs, boneWeights);
-                    AddSkinnedVertex(model, tri.V2, texWidth, texHeight, vertices, normals, uvs, boneWeights);
+                    AddSkinnedVertex(model, tri.V0, texWidth, texHeight, bones, boneWorldMatrices, vertices, normals, uvs, boneWeights);
+                    AddSkinnedVertex(model, tri.V1, texWidth, texHeight, bones, boneWorldMatrices, vertices, normals, uvs, boneWeights);
+                    AddSkinnedVertex(model, tri.V2, texWidth, texHeight, bones, boneWorldMatrices, vertices, normals, uvs, boneWeights);
 
                     int baseIdx = vertexOffset;
                     indices.Add(baseIdx);
@@ -394,7 +407,9 @@ namespace Source2Unity.Editor.Importers
 
             if (bones.Length > 0)
             {
-                var bindPoses = ComputeBindPoses(bones, rootTransform);
+                var bindPoses = new Matrix4x4[bones.Length];
+                for (int i = 0; i < bones.Length; i++)
+                    bindPoses[i] = boneWorldMatrices[i].inverse;
                 mesh.bindposes = bindPoses;
             }
 
@@ -402,33 +417,33 @@ namespace Source2Unity.Editor.Importers
             return mesh;
         }
 
-        private static Matrix4x4[] ComputeBindPoses(Transform[] bones, Transform rootTransform)
-        {
-            var bindPoses = new Matrix4x4[bones.Length];
-            var worldMatrices = new Matrix4x4[bones.Length];
-
-            for (int i = 0; i < bones.Length; i++)
-            {
-                worldMatrices[i] = bones[i].localToWorldMatrix;
-                bindPoses[i] = worldMatrices[i].inverse * rootTransform.localToWorldMatrix;
-            }
-
-            return bindPoses;
-        }
-
         private static void AddSkinnedVertex(
             MdlParsedModel model,
             MdlTriVertex triVert,
             int texWidth,
             int texHeight,
+            Transform[] bones,
+            Matrix4x4[] boneWorldMatrices,
             List<Vector3> vertices,
             List<Vector3> normals,
             List<Vector2> uvs,
             List<BoneWeight> boneWeights)
         {
+            int boneIdx = 0;
+            if (model.VertexBoneIndices != null &&
+                triVert.VertexIndex >= 0 &&
+                triVert.VertexIndex < model.VertexBoneIndices.Length)
+            {
+                boneIdx = model.VertexBoneIndices[triVert.VertexIndex];
+            }
+
             if (triVert.VertexIndex >= 0 && triVert.VertexIndex < model.Vertices.Length)
             {
-                vertices.Add(GoldSrcToUnity(model.Vertices[triVert.VertexIndex]));
+                var boneLocalPos = GoldSrcToUnity(model.Vertices[triVert.VertexIndex]);
+                if (boneWorldMatrices != null && boneIdx >= 0 && boneIdx < boneWorldMatrices.Length)
+                    vertices.Add(boneWorldMatrices[boneIdx].MultiplyPoint3x4(boneLocalPos));
+                else
+                    vertices.Add(boneLocalPos);
             }
             else
             {
@@ -437,7 +452,11 @@ namespace Source2Unity.Editor.Importers
 
             if (triVert.NormalIndex >= 0 && triVert.NormalIndex < model.Normals.Length)
             {
-                normals.Add(GoldSrcToUnityDir(model.Normals[triVert.NormalIndex]));
+                var boneLocalNormal = GoldSrcToUnityDir(model.Normals[triVert.NormalIndex]);
+                if (boneWorldMatrices != null && boneIdx >= 0 && boneIdx < boneWorldMatrices.Length)
+                    normals.Add(boneWorldMatrices[boneIdx].MultiplyVector(boneLocalNormal).normalized);
+                else
+                    normals.Add(boneLocalNormal);
             }
             else
             {
@@ -447,14 +466,6 @@ namespace Source2Unity.Editor.Importers
             float u = triVert.S / (float)texWidth;
             float v = 1f - (triVert.T / (float)texHeight);
             uvs.Add(new Vector2(u, v));
-
-            int boneIdx = 0;
-            if (model.VertexBoneIndices != null &&
-                triVert.VertexIndex >= 0 &&
-                triVert.VertexIndex < model.VertexBoneIndices.Length)
-            {
-                boneIdx = model.VertexBoneIndices[triVert.VertexIndex];
-            }
 
             boneWeights.Add(new BoneWeight
             {
