@@ -504,25 +504,37 @@ namespace Source2Unity.Editor.Importers
 
         private static Vector3 GoldSrcToUnity(Vector3F v)
         {
-            return new Vector3(v.X * GoldSrcScale, v.Z * GoldSrcScale, -v.Y * GoldSrcScale);
+            return new Vector3(-v.Y * GoldSrcScale, v.Z * GoldSrcScale, v.X * GoldSrcScale);
         }
 
         private static Vector3 GoldSrcToUnityDir(Vector3F v)
         {
-            return new Vector3(v.X, v.Z, -v.Y);
+            return new Vector3(-v.Y, v.Z, v.X);
         }
 
         private static Vector3 GoldSrcPositionToUnity(float gx, float gy, float gz)
         {
-            return new Vector3(gx * GoldSrcScale, gz * GoldSrcScale, -gy * GoldSrcScale);
+            return new Vector3(-gy * GoldSrcScale, gz * GoldSrcScale, gx * GoldSrcScale);
         }
 
-        private static Quaternion GoldSrcRotationToUnity(float rx, float ry, float rz)
+        private static Quaternion GoldSrcRotationToUnity(float v3, float v4, float v5)
         {
-            var qx = Quaternion.AngleAxis(-rx * Mathf.Rad2Deg, Vector3.right);
-            var qz = Quaternion.AngleAxis(-rz * Mathf.Rad2Deg, Vector3.up);
-            var qy = Quaternion.AngleAxis(ry * Mathf.Rad2Deg, Vector3.forward);
-            return qz * qx * qy;
+            // Valve's AngleMatrix: R = Rz(v5) * Ry(v3) * Rx(v4)
+            // Quaternion: Q_gs = Qz(v5) * Qy(v3) * Qx(v4)
+            float hx = v4 * 0.5f, hy = v3 * 0.5f, hz = v5 * 0.5f;
+            float cx = Mathf.Cos(hx), sx = Mathf.Sin(hx);
+            float cy = Mathf.Cos(hy), sy = Mathf.Sin(hy);
+            float cz = Mathf.Cos(hz), sz = Mathf.Sin(hz);
+
+            float gw = cz * cy * cx + sz * sy * sx;
+            float gx = cz * cy * sx - sz * sy * cx;
+            float gy = cz * sy * cx + sz * cy * sx;
+            float gz = sz * cy * cx - cz * sy * sx;
+
+            // GoldSrc RH (X-fwd, Y-left, Z-up) → Unity LH (X-right, Y-up, Z-fwd)
+            // Position: Unity = (-GS.Y, GS.Z, GS.X)
+            // Quaternion: transform vector part by axis mapping, negate w for handedness
+            return new Quaternion(gy, -gz, -gx, gw);
         }
 
         #endregion
